@@ -1,0 +1,133 @@
+import warnings
+import itertools
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import datetime
+
+# Defaults
+plt.rcParams['figure.figsize'] = (20.0, 10.0)
+plt.rcParams.update({'font.size': 12})
+plt.style.use('ggplot')
+
+# Load the data
+data = pd.read_csv('E:\learn\data.csv', engine='python',nrows=500)
+# A bit of pre-processing to make it nicer
+start = '2010-10-1 01'
+end = '2010-10-21 21'
+datestart = datetime.datetime.strptime(start, '%Y-%m-%d %H')
+dateend = datetime.datetime.strptime(end, '%Y-%m-%d %H')
+datelist = []
+while datestart < dateend:
+    datelist.append([datestart])
+    datestart += datetime.timedelta(hours = 1)
+
+datelist = np.array(datelist)
+a = data["load"]
+
+datelist = pd.DataFrame(datelist)
+c = pd.concat([datelist,a],axis=1)
+# Plot the data
+print(c)
+c.set_index([0], inplace=True)
+
+c.plot()
+plt.ylabel('Monthly airline passengers (x1000)')
+plt.xlabel('Date')
+plt.show()
+
+# Define the d and q parameters to take any value between 0 and 1
+q = d = range(0, 2)
+# Define the p parameters to take any value between 0 and 3
+p = range(0, 4)
+
+# Generate all different combinations of p, q and q triplets
+pdq = list(itertools.product(p, d, q))
+
+# Generate all different combinations of seasonal p, q and q triplets
+seasonal_pdq = [(x[0], x[1], x[2], 12) for x in list(itertools.product(p, d, q))]
+
+print('Examples of parameter combinations for Seasonal ARIMA...')
+print('SARIMAX: {} x {}'.format(pdq[1], seasonal_pdq[1]))
+print('SARIMAX: {} x {}'.format(pdq[1], seasonal_pdq[2]))
+print('SARIMAX: {} x {}'.format(pdq[2], seasonal_pdq[3]))
+print('SARIMAX: {} x {}'.format(pdq[2], seasonal_pdq[4]))
+
+#train_data = c['2014-11-11 00:00:00':'2014-11-18 00:00:00']
+train_data = c['2010-10-01 00:00:00':'2010-10-8 00:00:00']
+test_data = c[192:250]
+#print (train_data)
+warnings.filterwarnings("ignore") # specify to ignore warning messages
+
+AIC = []
+SARIMAX_model = []
+for param in pdq:
+    for param_seasonal in seasonal_pdq:
+        try:
+            mod = sm.tsa.statespace.SARIMAX(train_data,
+                                            order=(1, 0, 1),
+                                            seasonal_order=(1, 1, 0, 12),
+                                            enforce_stationarity=False,
+                                            enforce_invertibility=False)
+
+            results = mod.fit()
+
+            #print('SARIMAX{}x{} - AIC:{}'.format(param, param_seasonal, results.aic), end='\r')
+            AIC.append(results.aic)
+            SARIMAX_model.append([param, param_seasonal])
+        except:
+            continue
+#print(AIC)
+
+print('The smallest AIC is {} for model SARIMAX {}x{} '.format(min(AIC),SARIMAX_model[AIC.index(min(AIC))][0],SARIMAX_model[AIC.index(min(AIC))][1]))
+
+
+mod = sm.tsa.statespace.SARIMAX(train_data,
+                                order=(1, 0, 1),
+                                seasonal_order=(1, 1, 0, 12),
+                                enforce_stationarity=False,
+                                enforce_invertibility=False)
+
+results = mod.fit()
+results.plot_diagnostics(figsize=(20,14))
+plt.show()
+
+pred = results.get_forecast(steps=48)
+pred_ci = pred.conf_int()
+print (pred.predicted_mean['2010-10-8 00:00:00':'2010-10-10 00:00:00'])
+
+
+y = c['2010-10-8 00:00:00':'2010-10-10 00:00:00']
+ax = y.plot(figsize=(20,10))
+pred.predicted_mean.plot(ax=ax, label='Forecast')
+ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color='k', alpha=.1)
+ax.set_xlabel('Date')
+ax.set_ylabel('Load')
+plt.legend()
+plt.show()
+
+import eleceval
+#aa = pred.predicted_mean['2014-11-18 00:00:00':'2014-11-20 00:00:00']
+aa = np.array(pred.predicted_mean['2010-10-8 00:00:00':'2010-10-10 00:00:00'])
+t = a[168:216]
+true = pd.DataFrame(t)
+pred = pd.DataFrame(aa)
+
+print(pred)
+print(true)
+print("shape是",true.shape,pred.shape)
+truth_all_reshape=np.reshape(true,[-1,1])
+predict_all_reshape=np.reshape(pred,[-1,1])
+y_con = np.concatenate((true, pred),axis=1)
+#输出真实值和预测值
+#y_con = pd.concat([pred,true],axis=1)
+y_out = pd.DataFrame(y_con, columns=["true_data","pre_data"])
+print(y_out)
+y_out.to_csv('E:/learn/stepspre.csv')
+true_data = y_out['true_data']
+pred_data = y_out['pre_data']
+mape = eleceval.mape(pred_data,true_data)
+print ("mape值是",mape)
+
+
