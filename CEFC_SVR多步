@@ -1,0 +1,109 @@
+import pandas as pd
+import numpy as np
+import SVR
+
+
+def divideTrainTest(dataset, rate=0.6):
+
+    train_size = int(len(dataset) * rate)
+    test_size = len(dataset) - train_size
+    train, test = dataset[0:train_size], dataset[train_size:]
+    return train, test
+
+def createSamples(dataset, lookBack, RNN=True):
+
+    dataX, dataY = [], []
+    for i in range(len(dataset) - lookBack):
+        sample_X = dataset[i:(i + lookBack), :]
+        sample_Y = dataset[i + lookBack, :]
+        dataX.append(sample_X)
+        dataY.append(sample_Y)
+    dataX = np.array(dataX)  # (N, lag, 1)
+    dataY = np.array(dataY)  # (N, 1)
+    if not RNN:
+        dataX = np.reshape(dataX, (dataX.shape[0], dataX.shape[1]))
+
+    return dataX, dataY
+
+
+
+def duobu(a,pred):
+    c = pd.DataFrame(a[:,1:])
+    pred = pd.DataFrame(pred)
+    d = pd.concat([c,pred],axis = 1)
+    d = np.array(d)
+    #testX_new.append(pred)
+    return d
+
+df = pd.read_csv("data.csv",engine='python')
+df = df.fillna(0)
+ts = df['load']
+data = ts.values.reshape(-1, 1).astype("float32")  # (N, 1)
+
+train,test = divideTrainTest(data) #选择训练数据和测试数据
+train.shape
+
+trainX, trainY = createSamples(train, 20, RNN=False)
+testX, testY = createSamples(test, 20, RNN=False)  #testY是样本外真实的负荷
+
+C = 20
+epsilon = 0.01
+
+SVRModel = SVR.SVRModel(C=C, epsilon=epsilon)
+SVRModel.train(trainX, trainY)
+
+trainPred = SVRModel.predict(trainX).reshape(-1, 1)
+Pred = []
+for i in range(24):
+    testPred = SVRModel.predict(testX).reshape(-1, 1)   #testPred是样本外预测的负荷
+    Pred.append(testPred)
+    testX = duobu(testX,testPred)
+
+np.array(Pred).shape
+
+
+f = []
+for i in range(24):
+    f.append(testY)
+f = np.array(f)
+true = f.flatten()
+Pred = np.array(Pred)
+pred = Pred.flatten()
+
+import eleceval
+MAPE = eleceval.calcMAPE(pred, true)
+print("test MAPE", MAPE)
+import matplotlib.pyplot as plt
+X_plot = np.linspace(10,true.shape[0],true.shape[0],dtype=int)
+fig, ax = plt.subplots(figsize=(20,10))
+x = X_plot
+y = pred
+
+plt.plot(x, true, c='black')
+plt.plot(x, y, c='r')
+#plt.scatter(X_plot,true,c='k',label='data',zorder=1)
+plt.grid()
+plt.show()
+
+import eleceval
+
+a =0 
+for i in range(24):
+    mape = eleceval.mape(pred[i:i+1], true[i:i+1])
+    a+=mape
+    print("test MAPE", mape)
+
+
+mape = eleceval.calcMAPE(pred, true)
+print("test MAPE", mape)
+
+truth_all_reshape=np.reshape(testY,[-1,1])
+predict_all_reshape=np.reshape(testPred,[-1,1])
+y_con = np.concatenate((truth_all_reshape, predict_all_reshape), axis=1)
+#输出真实值和预测值
+y_out = pd.DataFrame(y_con, columns=["true_data","pre_data"])
+y_out.to_csv('E:\learn\svrstepspre.csv')
+
+
+
+
